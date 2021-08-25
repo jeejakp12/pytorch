@@ -120,6 +120,8 @@ class DataLoader(Generic[T_co]):
         persistent_workers (bool, optional): If ``True``, the data loader will not shutdown
             the worker processes after a dataset has been consumed once. This allows to
             maintain the workers `Dataset` instances alive. (default: ``False``)
+        device (str, optional): the data loader will copy Tensors
+            into device pinned memory before returning them if pin_memory is set to true.
 
 
     .. warning:: If the ``spawn`` start method is used, :attr:`worker_init_fn`
@@ -154,6 +156,7 @@ class DataLoader(Generic[T_co]):
     pin_memory: bool
     drop_last: bool
     timeout: float
+    device: str
     sampler: Sampler
     prefetch_factor: int
     _iterator : Optional['_BaseDataLoaderIter']
@@ -167,7 +170,8 @@ class DataLoader(Generic[T_co]):
                  timeout: float = 0, worker_init_fn: Optional[_worker_init_fn_t] = None,
                  multiprocessing_context=None, generator=None,
                  *, prefetch_factor: int = 2,
-                 persistent_workers: bool = False):
+                 persistent_workers: bool = False,
+                 device: str = ""):
         torch._C._log_api_usage_once("python.data_loader")
 
         if num_workers < 0:
@@ -189,6 +193,7 @@ class DataLoader(Generic[T_co]):
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.pin_memory = pin_memory
+        self.device = device
         self.timeout = timeout
         self.worker_init_fn = worker_init_fn
         self.multiprocessing_context = multiprocessing_context
@@ -491,7 +496,8 @@ class _BaseDataLoaderIter(object):
         self._index_sampler = loader._index_sampler
         self._num_workers = loader.num_workers
         self._prefetch_factor = loader.prefetch_factor
-        self._pin_memory = loader.pin_memory and torch.cuda.is_available()
+        self._pin_memory = loader.pin_memory
+        self._device = loader.device
         self._timeout = loader.timeout
         self._collate_fn = loader.collate_fn
         self._sampler_iter = iter(self._index_sampler)
@@ -560,7 +566,7 @@ class _SingleProcessDataLoaderIter(_BaseDataLoaderIter):
         index = self._next_index()  # may raise StopIteration
         data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
         if self._pin_memory:
-            data = _utils.pin_memory.pin_memory(data)
+            data = _utils.pin_memory.pin_memory(data, self._device)
         return data
 
 
@@ -928,7 +934,7 @@ class _MultiProcessingDataLoaderIter(_BaseDataLoaderIter):
                 target=_utils.pin_memory._pin_memory_loop,
                 args=(self._worker_result_queue, self._data_queue,
                       torch.cuda.current_device(),
-                      self._pin_memory_thread_done_event))
+                      self._pin_memory_thread_done_event, self._device))
             pin_memory_thread.daemon = True
             pin_memory_thread.start()
             # Similar to workers (see comment above), we only register
