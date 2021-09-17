@@ -1,0 +1,4 @@
+# Lazy Tensor TS Backend Generated Code
+ts_backend/lazy_tensor_core/csrc/ts_backend/LazyNativeFunctions.h
+ts_backend/lazy_tensor_core/csrc/ts_backend/RegisterAutogradLazy.cpp
+ts_backend/lazy_tensor_core/csrc/ts_backend/RegisterLazy.cpp
